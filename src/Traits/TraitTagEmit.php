@@ -5,6 +5,7 @@ namespace NFePHP\NFe\Traits;
 use NFePHP\Common\DOMImproved as Dom;
 use stdClass;
 use DOMElement;
+use InvalidArgumentException;
 use NFePHP\Common\Strings;
 
 /**
@@ -31,6 +32,7 @@ trait TraitTagEmit
             'IM',
             'CNAE',
             'CRT',
+            'tpRegimeIBSCBS',
             'CNPJ',
             'CPF',
             'ISUFEmit'
@@ -110,6 +112,21 @@ trait TraitTagEmit
             $std->CRT,
             true,
             $identificador . "Código de Regime Tributário do emitente"
+        );
+        //NT 2026.005 v1.00
+        //somente 1, 2, 3 ou 4, a tag não deve ser informada nas demais situações (null = não informar)
+        if ($std->tpRegimeIBSCBS !== null && !in_array((string) $std->tpRegimeIBSCBS, ['1', '2', '3', '4'], true)) {
+            throw new InvalidArgumentException(
+                $identificador . "tpRegimeIBSCBS deve ser 1, 2, 3 ou 4, ou não ser informado. "
+                . "Informado: '$std->tpRegimeIBSCBS'"
+            );
+        }
+        $this->dom->addChild(
+            $this->emit,
+            "tpRegimeIBSCBS",
+            $std->tpRegimeIBSCBS,
+            false,
+            $identificador . "Tipo de Regime de Apuração do IBS e da CBS"
         );
         //NT 2005.002 v1.50
         $this->dom->addChild(

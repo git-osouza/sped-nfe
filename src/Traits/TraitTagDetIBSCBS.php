@@ -6,6 +6,7 @@ use NFePHP\Common\DOMImproved as Dom;
 use stdClass;
 use DOMElement;
 use DOMException;
+use InvalidArgumentException;
 
 /**
  * @property Dom $dom
@@ -19,6 +20,7 @@ use DOMException;
  * @property array $aGAjusteCompet
  * @property array $aGEstornoCred
  * @property array $aGCredPresOper
+ * @property array $aGTribSN
  * @property string $cst_ibscbs
  * @property stdClass $stdIBSCBSTot
  * @property stdClass $stdIBSCredPresTot
@@ -1196,6 +1198,116 @@ trait TraitTagDetIBSCBS
         );
         $this->aGEstornoCred[$std->item] = $estorno;
         return $estorno;
+    }
+
+    /**
+     * Grupo de Tributação do IBS e da CBS para o Simples Nacional
+     * det/imposto/IBSCBS/gTribSN
+     * $this->aIBSCBS[item] append $this->aGTribSN[item]
+     * NT 2026.005 v1.00
+     * O grupo gIBSSN só é gerado quando pIBSSN for informado
+     * @param stdClass $std
+     * @return DOMElement
+     * @throws DOMException
+     */
+    public function taggTribSN(stdClass $std): DOMElement
+    {
+        $possible = [
+            'item',
+            'pIBSSN',
+            'vIBSSN',
+            'pCBSSN',
+            'vCBSSN',
+        ];
+        $std = $this->equilizeParameters($std, $possible);
+        $identificador = "UB115a gTribSN Item: $std->item -";
+
+        //gCBSSN é obrigatório (1-1) em todo gTribSN, com alíquota e valor
+        $this->assertNumericSN($identificador, 'pCBSSN', $std->pCBSSN, true);
+        $this->assertNumericSN($identificador, 'vCBSSN', $std->vCBSSN, true);
+        //gIBSSN é opcional, mas quando existe exige alíquota e valor juntos
+        $hasGIBSSN = $std->pIBSSN !== null;
+        if ($hasGIBSSN || $std->vIBSSN !== null) {
+            $this->assertNumericSN($identificador, 'pIBSSN', $std->pIBSSN, true);
+            $this->assertNumericSN($identificador, 'vIBSSN', $std->vIBSSN, true);
+        }
+
+        //totalizador em centavos inteiros, sem acumular float
+        $this->stdIBSCBSTot->gTribSN->vIBSSNCents += $hasGIBSSN ? $this->toCentsSN($std->vIBSSN) : 0;
+        $this->stdIBSCBSTot->gTribSN->vCBSSNCents += $this->toCentsSN($std->vCBSSN);
+        $this->stdIBSCBSTot->gTribSN->vIBSSN = $this->stdIBSCBSTot->gTribSN->vIBSSNCents / 100;
+        $this->stdIBSCBSTot->gTribSN->vCBSSN = $this->stdIBSCBSTot->gTribSN->vCBSSNCents / 100;
+
+        $gTribSN = $this->dom->createElement("gTribSN");
+        if ($hasGIBSSN) {
+            $gIBSSN = $this->dom->createElement("gIBSSN");
+            $this->dom->addChild(
+                $gIBSSN,
+                "pIBSSN",
+                $this->conditionalNumberFormatting($std->pIBSSN, 4),
+                true,
+                "$identificador Alíquota do IBS do Simples Nacional (pIBSSN)"
+            );
+            $this->dom->addChild(
+                $gIBSSN,
+                "vIBSSN",
+                $this->conditionalNumberFormatting($std->vIBSSN),
+                true,
+                "$identificador Valor do IBS do Simples Nacional (vIBSSN)"
+            );
+            $gTribSN->appendChild($gIBSSN);
+        }
+        $gCBSSN = $this->dom->createElement("gCBSSN");
+        $this->dom->addChild(
+            $gCBSSN,
+            "pCBSSN",
+            $this->conditionalNumberFormatting($std->pCBSSN, 4),
+            true,
+            "$identificador Alíquota da CBS do Simples Nacional (pCBSSN)"
+        );
+        $this->dom->addChild(
+            $gCBSSN,
+            "vCBSSN",
+            $this->conditionalNumberFormatting($std->vCBSSN),
+            true,
+            "$identificador Valor da CBS do Simples Nacional (vCBSSN)"
+        );
+        $gTribSN->appendChild($gCBSSN);
+        $this->aGTribSN[$std->item] = $gTribSN;
+        return $gTribSN;
+    }
+
+    /**
+     * Exige valor numérico não negativo nos campos do gTribSN (NT 2026.005 v1.00)
+     * @param string $identificador
+     * @param string $campo
+     * @param mixed $valor
+     * @param bool $obrigatorio
+     * @throws InvalidArgumentException
+     */
+    protected function assertNumericSN(string $identificador, string $campo, $valor, bool $obrigatorio): void
+    {
+        if ($valor === null || $valor === '') {
+            if ($obrigatorio) {
+                throw new InvalidArgumentException("$identificador $campo é obrigatório e não foi informado.");
+            }
+            return;
+        }
+        if (!is_numeric($valor) || $valor < 0) {
+            throw new InvalidArgumentException(
+                "$identificador $campo deve ser um número maior ou igual a zero. Informado: '$valor'"
+            );
+        }
+    }
+
+    /**
+     * Converte valor monetário em centavos inteiros (13v2), para somar sem erro de ponto flutuante
+     * @param mixed $valor
+     * @return int
+     */
+    protected function toCentsSN($valor): int
+    {
+        return (int) round(((float) $valor) * 100);
     }
 
     /**

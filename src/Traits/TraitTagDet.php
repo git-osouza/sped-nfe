@@ -71,6 +71,7 @@ trait TraitTagDet
             'vOutro',
             'indTot',
             'indBemMovelUsado',
+            'cAtivSN',
             'xPed',
             'nItemPed',
             'nFCI',
@@ -342,6 +343,21 @@ trait TraitTagDet
             !empty($std->indBemMovelUsado) ? 1 : null,
             false,
             "$identificador Indicador de fornecimento de bem móvel usado (indBemMovelUsado)"
+        );
+        //NT 2026.005 v1.00
+        //somente 01, 02, 03, 04 ou 90 (null = não informar)
+        if ($std->cAtivSN !== null && !in_array((string) $std->cAtivSN, ['01', '02', '03', '04', '90'], true)) {
+            throw new InvalidArgumentException(
+                "$identificador cAtivSN deve ser 01, 02, 03, 04 ou 90, ou não ser informado. "
+                . "Informado: '$std->cAtivSN'"
+            );
+        }
+        $this->dom->addChild(
+            $prod,
+            "cAtivSN",
+            $std->cAtivSN,
+            false,
+            "$identificador Código de atividade do Simples Nacional (cAtivSN)"
         );
         $this->dom->addChild(
             $prod,

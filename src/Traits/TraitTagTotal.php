@@ -6,6 +6,7 @@ use NFePHP\Common\DOMImproved as Dom;
 use stdClass;
 use DOMElement;
 use DOMException;
+use InvalidArgumentException;
 
 /**
  * @property Dom $dom
@@ -17,6 +18,7 @@ use DOMException;
  * @property stdclass $stdTot Totalizador
  * @property stdclass $stdISSQNTot Totalizador
  * @property stdclass $stdIBSCBSTot Totalizador
+ * @property array $aGTribSN
  * @property bool $flagMono
  * @method equilizeParameters($std, $possible)
  * @method conditionalNumberFormatting($value, $decimal = 2)
@@ -597,6 +599,8 @@ trait TraitTagTotal
             'gMono_vCBSMonoRet',
             'gEstonoCred_vIBSEstCred',
             'gEstonoCred_vCBSEstCred',
+            'gTribSN_vIBSSN',
+            'gTribSN_vCBSSN',
         ];
         $std = $this->equilizeParameters($std, $possible);
         $identificador = "W34 IBSCBSTot -";
@@ -624,6 +628,9 @@ trait TraitTagTotal
         $gMono_vCBSMonoRet = $std->gMono_vCBSMonoRet ?? $this->stdIBSCBSTot->gMono->vCBSMonoRet;
         $gEstornoCred_vIBSEstCred = $std->gEstonoCred_vIBSEstCred ?? $this->stdIBSCBSTot->gEstornoCred->vIBSEstCred;
         $gEstornoCred_vCBSEstCred = $std->gEstonoCred_vCBSEstCred ?? $this->stdIBSCBSTot->gEstornoCred->vCBSEstCred;
+        $gTribSN_vIBSSN = $std->gTribSN_vIBSSN ?? $this->stdIBSCBSTot->gTribSN->vIBSSN;
+        $gTribSN_vCBSSN = $std->gTribSN_vCBSSN ?? $this->stdIBSCBSTot->gTribSN->vCBSSN;
+        $this->assertTotalGTribSN($identificador, $std);
 
         //totalizador final
         $this->stdTot->vIBS = $gIBS_vIBS;
@@ -793,6 +800,25 @@ trait TraitTagTotal
             );
             $ibstot->appendChild($gMono);
         }
+        //NT 2026.005 v1.00
+        if (!empty($this->aGTribSN) || isset($std->gTribSN_vIBSSN) || isset($std->gTribSN_vCBSSN)) {
+            $gTribSN = $this->dom->createElement('gTribSN');
+            $this->dom->addChild(
+                $gTribSN,
+                "vIBSSN",
+                $this->conditionalNumberFormatting($gTribSN_vIBSSN),
+                true,
+                "$identificador Valor total do IBS do Simples Nacional (vIBSSN)"
+            );
+            $this->dom->addChild(
+                $gTribSN,
+                "vCBSSN",
+                $this->conditionalNumberFormatting($gTribSN_vCBSSN),
+                true,
+                "$identificador Valor total da CBS do Simples Nacional (vCBSSN)"
+            );
+            $ibstot->appendChild($gTribSN);
+        }
         //NT 2025.002_v1.30 - PL_010_V1.30
         if (!empty($gEstornoCred_vIBSEstCred) || !empty($gEstornoCred_vCBSEstCred)) {
             $gEst = $this->dom->createElement('gEstornoCred');
@@ -893,5 +919,41 @@ trait TraitTagTotal
         );
         $this->retTrib = $retTrib;
         return $retTrib;
+    }
+
+    /**
+     * Confere o total do gTribSN informado contra os itens (NT 2026.005 v1.00, rejeições 1276, 1277 e 1284).
+     * Sem total informado, o total é a soma dos itens e não há o que conferir.
+     * @param string $identificador
+     * @param stdClass $std
+     * @throws InvalidArgumentException
+     */
+    protected function assertTotalGTribSN(string $identificador, stdClass $std): void
+    {
+        $vIBSSNInformado = isset($std->gTribSN_vIBSSN);
+        $vCBSSNInformado = isset($std->gTribSN_vCBSSN);
+        if (!$vIBSSNInformado && !$vCBSSNInformado) {
+            return;
+        }
+        if (empty($this->aGTribSN)) {
+            throw new InvalidArgumentException(
+                "$identificador gTribSN informado no total, mas nenhum item possui o grupo gTribSN "
+                . "(rejeição 1276)."
+            );
+        }
+        $somaIBSSN = $this->stdIBSCBSTot->gTribSN->vIBSSNCents;
+        $somaCBSSN = $this->stdIBSCBSTot->gTribSN->vCBSSNCents;
+        if ($vIBSSNInformado && $this->toCentsSN($std->gTribSN_vIBSSN) !== $somaIBSSN) {
+            throw new InvalidArgumentException(
+                "$identificador vIBSSN do total ($std->gTribSN_vIBSSN) difere da soma dos itens "
+                . number_format($somaIBSSN / 100, 2, '.', '') . " (rejeição 1277)."
+            );
+        }
+        if ($vCBSSNInformado && $this->toCentsSN($std->gTribSN_vCBSSN) !== $somaCBSSN) {
+            throw new InvalidArgumentException(
+                "$identificador vCBSSN do total ($std->gTribSN_vCBSSN) difere da soma dos itens "
+                . number_format($somaCBSSN / 100, 2, '.', '') . " (rejeição 1284)."
+            );
+        }
     }
 }
